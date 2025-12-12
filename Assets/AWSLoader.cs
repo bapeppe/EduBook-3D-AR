@@ -49,21 +49,44 @@ public class AWSLoader : MonoBehaviour
 
     void FixMaterials(GameObject model)
     {
+        // 1. Troviamo lo shader URP sicuro
         Shader standardShader = Shader.Find("Universal Render Pipeline/Lit");
         if (standardShader == null) standardShader = Shader.Find("Mobile/Diffuse");
-        
+
         Renderer[] renderers = model.GetComponentsInChildren<Renderer>();
+
         foreach (Renderer ren in renderers)
         {
             foreach (Material mat in ren.materials)
             {
-                if (mat.HasProperty("_BaseMap"))
+                // 2. CACCIA ALLA TEXTURE: Cerchiamo l'immagine ovunque possa essersi nascosta
+                Texture textureTrovata = null;
+
+                if (mat.HasProperty("_BaseMap") && mat.GetTexture("_BaseMap") != null)
                 {
-                    Texture texture = mat.GetTexture("_BaseMap");
-                    mat.shader = standardShader;
-                    mat.SetTexture("_BaseMap", texture);
+                    textureTrovata = mat.GetTexture("_BaseMap");
                 }
-                else { mat.shader = standardShader; }
+                else if (mat.HasProperty("_MainTex") && mat.GetTexture("_MainTex") != null)
+                {
+                    textureTrovata = mat.GetTexture("_MainTex"); // <--- ECCO IL FIX!
+                }
+                else if (mat.HasProperty("baseColorTexture") && mat.GetTexture("baseColorTexture") != null)
+                {
+                    textureTrovata = mat.GetTexture("baseColorTexture"); // Nome usato da glTF a volte
+                }
+
+                // 3. APPLICAZIONE
+                if (textureTrovata != null)
+                {
+                    mat.shader = standardShader; // Cambia motore
+                    mat.SetTexture("_BaseMap", textureTrovata); // Incolla la texture nel posto giusto per URP
+                    mat.color = Color.white; // Resetta eventuali tinte strane
+                }
+                else
+                {
+                    // Se proprio non c'è texture, almeno mettiamo lo shader giusto
+                    mat.shader = standardShader;
+                }
             }
         }
     }
