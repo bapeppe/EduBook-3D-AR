@@ -117,4 +117,14 @@ public class AWSLoader : MonoBehaviour
         float maxDimension = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
         if (maxDimension > 0) parentObject.transform.localScale = Vector3.one * (targetSize / maxDimension);
     }
+
+    // TASTO "RESET" 
+    public void DestroyModel()
+    {
+        if (currentModel != null)
+        {
+            Destroy(currentModel);
+            currentModel = null;
+        }
+    }
 }

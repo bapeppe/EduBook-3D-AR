@@ -111,4 +111,18 @@ public class ARQRScanner : MonoBehaviour
         isScanning = true;
         if(statusText != null) statusText.text = "Cerca QR...";
     }
+
+    // --- FUNZIONE PER IL TASTO "NUOVA SCANSIONE" ---
+    public void RestartExperience()
+    {
+        // 1. Cancella il modello 3D attuale
+        loaderScript.DestroyModel();
+        
+        // 2. Resetta lo scanner
+        isScanning = true;
+        hits.Clear(); // Pulisce la memoria dei raggi laser precedenti
+        
+        if(statusText != null) statusText.text = "Inquadra un nuovo QR Code...";
+        Debug.Log("Sistema resettato. Pronto per nuova scansione.");
+    }
 }
