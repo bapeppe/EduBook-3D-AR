@@ -150,6 +150,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AWSLoader
   rotationSpeed: 50
+  targetSize: 0.2
 --- !u!114 &207147542
 MonoBehaviour:
   m_ObjectHideFlags: 0
