@@ -226,7 +226,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 49f001e2f6ad04ecab9f4b89fa013c01, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AWSLoader
-  rotationSpeed: 50
+  autoRotationSpeed: 30
+  touchRotationSpeed: 0.3
   targetSize: 0.2
   loadingPanel: {fileID: 40300450}
 --- !u!114 &207147542
