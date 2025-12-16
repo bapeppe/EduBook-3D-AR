@@ -1,5 +1,5 @@
 using System.Collections;
-using System.Collections.Generic; // Serve per le liste
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
@@ -13,20 +13,32 @@ public class ARQRScanner : MonoBehaviour
 {
     [Header("Componenti")]
     public ARCameraManager cameraManager;
-    public ARRaycastManager raycastManager; // <--- NUOVO: Serve per toccare il mondo fisico
+    public ARRaycastManager raycastManager;
     public AWSLoader loaderScript;
     public TextMeshProUGUI statusText;
 
-    private bool isScanning = true;
+    // MODIFICA 1: Inizia disattivato per sicurezza
+    private bool isScanning = false; 
     private MultiFormatReader reader = new MultiFormatReader();
-    private List<ARRaycastHit> hits = new List<ARRaycastHit>(); // Lista dei punti colpiti
+    private List<ARRaycastHit> hits = new List<ARRaycastHit>();
 
-    void OnEnable()
+    // MODIFICA 2: Usiamo Start come Coroutine per il ritardo iniziale
+    IEnumerator Start()
     {
+        if(statusText != null) statusText.text = "Avvio fotocamera...";
+        
+        // Aspetta 2 secondi reali prima di attivare il cervello
+        yield return new WaitForSeconds(2.0f);
+        
+        isScanning = true;
+        if(statusText != null) statusText.text = "Inquadra un QR Code...";
+        
+        // Colleghiamo l'evento solo ORA, non prima
         cameraManager.frameReceived += OnCameraFrameReceived;
     }
 
-    void OnDisable()
+    // Importante: Rimuovere l'evento quando si chiude/cambia scena
+    void OnDestroy()
     {
         cameraManager.frameReceived -= OnCameraFrameReceived;
     }
@@ -70,31 +82,25 @@ public class ARQRScanner : MonoBehaviour
         if (result != null)
         {
             string scannedText = result.Text;
-            if (scannedText.StartsWith("http"))
+            
+            // Controllo extra: scansione valida solo se è un link web
+            if (!string.IsNullOrEmpty(scannedText) && scannedText.StartsWith("http"))
             {
-                // ABBIAMO IL LINK! ORA CERCHIAMO DOVE PIAZZARLO.
-                
-                // Lanciamo un raggio dal centro dello schermo (0.5, 0.5)
+                // Lanciamo un raggio dal centro dello schermo
                 Vector2 screenCenter = new Vector2(Screen.width / 2, Screen.height / 2);
                 
-                // Cerchiamo piani (tavoli/libri) o punti caratteristici
                 if (raycastManager.Raycast(screenCenter, hits, TrackableType.PlaneWithinPolygon | TrackableType.FeaturePoint))
                 {
-                    // Abbiamo toccato qualcosa di solido!
-                    Pose hitPose = hits[0].pose; // La posizione esatta nello spazio 3D
+                    Pose hitPose = hits[0].pose;
                     
-                    Debug.Log("QR Trovato e Posizione Fisica Trovata!");
-                    if(statusText != null) statusText.text = "Posiziono modello...";
+                    if(statusText != null) statusText.text = "Trovato! Posiziono...";
                     
-                    isScanning = false;
-                    
-                    // Passiamo sia il link CHE la posizione fisica al Loader
+                    isScanning = false; // Stop scansione
                     loaderScript.DownloadModelAtPosition(scannedText, hitPose.position, hitPose.rotation);
                 }
                 else
                 {
-                    // Se non trova superfici, ti dice di avvicinarti
-                     if(statusText != null) statusText.text = "Inquadra meglio il piano...";
+                     if(statusText != null) statusText.text = "QR Trovato! Inquadra un piano...";
                 }
             }
         }
@@ -106,23 +112,21 @@ public class ARQRScanner : MonoBehaviour
         image.Convert(paramsData, new System.IntPtr(buffer.GetUnsafePtr()), buffer.Length);
     }
 
-    public void ResetScanner()
-    {
-        isScanning = true;
-        if(statusText != null) statusText.text = "Cerca QR...";
-    }
-
-    // --- FUNZIONE PER IL TASTO "NUOVA SCANSIONE" ---
     public void RestartExperience()
     {
-        // 1. Cancella il modello 3D attuale
         loaderScript.DestroyModel();
         
-        // 2. Resetta lo scanner
-        isScanning = true;
-        hits.Clear(); // Pulisce la memoria dei raggi laser precedenti
+        // Piccolo ritardo anche nel reset per evitare doppie letture immediate
+        StartCoroutine(ResetDelay());
+    }
+
+    IEnumerator ResetDelay()
+    {
+        if(statusText != null) statusText.text = "Reset in corso...";
+        yield return new WaitForSeconds(1.0f);
         
+        isScanning = true;
+        hits.Clear();
         if(statusText != null) statusText.text = "Inquadra un nuovo QR Code...";
-        Debug.Log("Sistema resettato. Pronto per nuova scansione.");
     }
 }

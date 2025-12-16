@@ -4,19 +4,36 @@ using System.Threading.Tasks;
 
 public class AWSLoader : MonoBehaviour
 {
-    [Header("Impostazioni")]
+    [Header("Impostazioni Modello")]
     public float rotationSpeed = 50f;
     public float targetSize = 0.2f;
+
+    [Header("Interfaccia UI")]
+    public GameObject loadingPanel; // Trascina qui il pannello con la rotellina
 
     private GameObject currentModel;
     private bool isRotating = true;
 
-    // --- FUNZIONE PRINCIPALE ---
+    // --- PUNTO CRUCIALE: Usiamo Awake() ---
+    // Awake viene eseguito prima di Start(), appena l'oggetto viene caricato in memoria.
+    // Questo spegne il pannello istantaneamente, evitando che si veda all'avvio dell'app.
+    void Awake()
+    {
+        if (loadingPanel != null) 
+            loadingPanel.SetActive(false);
+    }
+
+    // --- FUNZIONE DI DOWNLOAD ---
     public async void DownloadModelAtPosition(string url, Vector3 position, Quaternion rotation)
     {
+        // 1. ACCENDIAMO IL CARICAMENTO
+        // Ora appare solo perché lo abbiamo chiamato esplicitamente qui
+        if (loadingPanel != null) loadingPanel.SetActive(true);
+
+        // Pulizia vecchio modello se presente
         if (currentModel != null) Destroy(currentModel);
 
-        // Creiamo il contenitore
+        // Creiamo il contenitore vuoto nel punto del QR
         currentModel = new GameObject("Scaricato_da_AWS");
         currentModel.transform.position = position;
         currentModel.transform.rotation = rotation;
@@ -24,47 +41,61 @@ public class AWSLoader : MonoBehaviour
         // Setup glTFast
         var gltf = currentModel.AddComponent<GltfAsset>();
         gltf.Url = url;
-        gltf.LoadOnStartup = false;
+        gltf.LoadOnStartup = false; // Fermo! Gestiamo noi il caricamento.
 
-        Debug.Log("Download avviato...");
+        Debug.Log("Download avviato da: " + url);
 
-        // Avviamo il download
+        // Avviamo il download e aspettiamo la fine
         bool success = await gltf.Load(url);
 
         if (success)
         {
             if (gltf.SceneInstance != null)
             {
-                await Task.Yield(); // Aspettiamo un frame
-
-                // 1. CORREZIONE MATERIALI (Metodo Diretto)
-                // Passiamo il componente "gltf" per estrarre la texture dalla memoria
+                // Aspettiamo un frame per sicurezza grafica
+                await Task.Yield(); 
+                
+                // PASSO A: Recuperiamo la texture dalla memoria e coloriamo il modello
                 await FixMaterialsDirectly(currentModel, gltf);
-
-                // 2. CORREZIONE POSIZIONE
+                
+                // PASSO B: Centriamo il modello per non farlo "orbitare"
                 RecenterModel(currentModel);
             }
         }
         else
         {
-            Debug.LogError("Download fallito.");
+            Debug.LogError("Download fallito. Controlla il link o la connessione.");
         }
+
+        // 2. SPEGNIAMO IL CARICAMENTO (Operazione finita)
+        if (loadingPanel != null) loadingPanel.SetActive(false);
     }
 
-    // --- NUOVA FUNZIONE DI FIX ---
+    // --- FUNZIONE RESET (Tasto "Nuova Scansione") ---
+    public void DestroyModel()
+    {
+        if (currentModel != null)
+        {
+            Destroy(currentModel);
+            currentModel = null;
+        }
+        
+        // Se l'utente resetta mentre sta caricando, nascondiamo comunque il pannello
+        if (loadingPanel != null) loadingPanel.SetActive(false);
+    }
+
+    // --- RIPARAZIONE MATERIALI (Metodo Diretto alla Fonte) ---
     async Task FixMaterialsDirectly(GameObject model, GltfAsset gltfAsset)
     {
-        // Troviamo lo shader sicuro (URP Lit)
+        // Cerchiamo lo shader sicuro (URP Lit)
         Shader standardShader = Shader.Find("Universal Render Pipeline/Lit");
         if (standardShader == null) standardShader = Shader.Find("Mobile/Diffuse");
 
-        // Recuperiamo la texture direttamente dalla "pancia" di glTFast (bypassando il materiale rotto)
         Texture2D textureDiretta = null;
         
-        // Chiediamo all'importer se ha delle texture in memoria
+        // Entriamo nella memoria di glTFast per prendere la texture originale
         if (gltfAsset.Importer != null && gltfAsset.Importer.TextureCount > 0)
         {
-            // Prendiamo la prima texture disponibile (solitamente è quella del colore base)
             textureDiretta = gltfAsset.Importer.GetTexture(0);
         }
 
@@ -74,35 +105,38 @@ public class AWSLoader : MonoBehaviour
         {
             foreach (Material mat in ren.materials)
             {
-                // Applichiamo lo shader sicuro
-                mat.shader = standardShader;
+                mat.shader = standardShader; // Applica motore grafico sicuro
 
                 if (textureDiretta != null)
                 {
-                    // ABBIAMO VINTO: Applichiamo la texture che abbiamo estratto alla fonte
+                    // Applica la texture estratta
                     mat.SetTexture("_BaseMap", textureDiretta); 
                     mat.SetTexture("_MainTex", textureDiretta);
                     mat.color = Color.white; 
                 }
                 else
                 {
-                    // Se proprio il file non ha texture nemmeno in memoria, lo facciamo GIALLO per segnalarlo
-                    mat.color = Color.yellow; 
+                    // Se non c'è texture, lascia bianco pulito
+                    mat.color = Color.white; 
                 }
             }
         }
-        
         await Task.Yield();
     }
 
+    // --- ROTAZIONE ---
     void Update()
     {
         if (currentModel != null && isRotating)
+        {
+            // Ruota sull'asse Y locale
             currentModel.transform.Rotate(Vector3.up, rotationSpeed * Time.deltaTime, Space.Self);
+        }
     }
 
     public void ToggleRotation() { isRotating = !isRotating; }
 
+    // --- CENTRAGGIO ---
     void RecenterModel(GameObject parentObject)
     {
         Bounds bounds = new Bounds(parentObject.transform.position, Vector3.zero);
@@ -112,19 +146,18 @@ public class AWSLoader : MonoBehaviour
         foreach (Renderer ren in renderers) bounds.Encapsulate(ren.bounds);
 
         Vector3 centerOffset = bounds.center - parentObject.transform.position;
-        foreach (Transform child in parentObject.transform) child.position -= centerOffset;
-
-        float maxDimension = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
-        if (maxDimension > 0) parentObject.transform.localScale = Vector3.one * (targetSize / maxDimension);
-    }
-
-    // TASTO "RESET" 
-    public void DestroyModel()
-    {
-        if (currentModel != null)
+        
+        // Sposta i figli all'indietro per centrarli sul pivot
+        foreach (Transform child in parentObject.transform)
         {
-            Destroy(currentModel);
-            currentModel = null;
+            child.position -= centerOffset;
+        }
+
+        // Scala a 20cm (o targetSize)
+        float maxDimension = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
+        if (maxDimension > 0)
+        {
+            parentObject.transform.localScale = Vector3.one * (targetSize / maxDimension);
         }
     }
 }
